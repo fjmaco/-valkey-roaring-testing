@@ -80,7 +80,12 @@ order:
 VR_SOURCE=~/src/valkey-roaring bash run_all.sh   # test a working tree
 VR_REF=v1.1.1 bash run_all.sh                    # test a released tag
 VR_REF=my-branch bash run_all.sh                 # test a branch
+VR_REF=b96eb7cdaa27df5ccabd3a2a1389156d2940afe5 bash run_all.sh   # exact commit
 ```
+
+A commit must be given in full: the fetch asks the remote for that object
+by name, and GitHub only serves full 40-character SHAs — an abbreviated one
+fails with `Could not fetch`.
 
 Testing an uncommitted change is the first form: point `VR_SOURCE` at the
 working tree and the image is built from it directly.
@@ -92,6 +97,7 @@ working tree and the image is built from it directly.
 ├── run_all.sh              orchestrator (resolves source, starts server, runs suites)
 ├── docker-compose.yml      the server under test
 ├── requirements.txt        pyroaring — real CRoaring bindings for interop
+├── .github/workflows/      CI: per-push, nightly against the module's main
 ├── lib/
 │   ├── valkey_client.py    stdlib-only binary-safe RESP2/RESP3 client
 │   ├── harness.py          assertion counters and reporting

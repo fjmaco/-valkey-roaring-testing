@@ -14,7 +14,7 @@
 #   .module-src                         cloned/updated from VR_REPO at VR_REF
 #
 #   VR_REPO   git remote to clone   (default: the public valkey-roaring repo)
-#   VR_REF    branch, tag or SHA    (default: main)
+#   VR_REF    branch, tag, or full 40-char SHA   (default: main)
 #   VR_KEEP=1 leave the server running after a passing run
 
 set -uo pipefail
