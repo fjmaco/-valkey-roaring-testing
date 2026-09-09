@@ -28,6 +28,13 @@ on:
         type: boolean
         default: false
 
+concurrency:
+  # A full run is ~10 minutes, so a push that supersedes an in-flight run
+  # should cancel it rather than queue a second one. Never cancel the
+  # nightly: it and a push run answer different questions.
+  group: validate-${{ github.event_name == 'schedule' && 'nightly' || github.ref }}
+  cancel-in-progress: ${{ github.event_name != 'schedule' }}
+
 jobs:
   validate:
     runs-on: ubuntu-latest
