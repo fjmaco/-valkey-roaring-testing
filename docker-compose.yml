@@ -1,0 +1,21 @@
+# The server under test. Built from a checkout of the module's source —
+# this repository holds no module code — which `run_all.sh` resolves and
+# exports as VR_SOURCE. See "Where the module comes from" in README.md.
+#
+# The project name is pinned because the repository directory is named
+# `-valkey-roaring-testing`; compose derives the project name from the
+# directory and rejects one that starts with a dash.
+name: valkey-roaring-testing
+
+services:
+  valkey:
+    build:
+      context: ${VR_SOURCE:-.module-src}
+      dockerfile: Dockerfile
+    ports:
+      - "6379:6379"
+    volumes:
+      - valkey-data:/data
+
+volumes:
+  valkey-data:
