@@ -32,14 +32,15 @@ if [ -n "${VR_SOURCE:-}" ]; then
 elif [ -f ../valkey-roaring/Dockerfile ]; then
   VR_SOURCE=../valkey-roaring
 else
-  if [ -d .module-src/.git ]; then
-    git -C .module-src fetch --quiet --depth 1 origin "$VR_REF"
-  else
-    rm -rf .module-src
-    git clone --quiet --depth 1 --branch "$VR_REF" "$VR_REPO" .module-src \
-      || { echo "Could not clone $VR_REPO at $VR_REF" >&2; exit 1; }
-  fi
-  git -C .module-src checkout --quiet FETCH_HEAD 2>/dev/null || true
+  # init + fetch rather than clone: `git clone --branch` takes a branch or a
+  # tag but not a commit, and fetching a ref works the same whether the
+  # checkout is new or already there.
+  [ -d .module-src/.git ] || git init --quiet .module-src
+  git -C .module-src remote add origin "$VR_REPO" 2>/dev/null \
+    || git -C .module-src remote set-url origin "$VR_REPO"
+  git -C .module-src fetch --quiet --depth 1 origin "$VR_REF" \
+    || { echo "Could not fetch $VR_REF from $VR_REPO" >&2; exit 1; }
+  git -C .module-src checkout --quiet --force FETCH_HEAD
   VR_SOURCE=.module-src
 fi
 export VR_SOURCE
