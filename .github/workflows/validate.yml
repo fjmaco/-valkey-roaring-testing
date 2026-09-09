@@ -1,0 +1,49 @@
+name: Validate
+
+# One job, answering a different question depending on what triggered it.
+#
+# On push and pull_request it asks "do these suites still work?" — the
+# module is held fixed at main and this repository is what changed.
+#
+# On the nightly schedule it asks "does the module still pass?" — this
+# repository is fixed and the module is what moved. That second question is
+# the reason the suite lives in its own repository: a green run has a shelf
+# life, because the thing under test evolves on its own schedule.
+#
+# workflow_dispatch takes a ref, so a release tag or a branch can be put
+# through the whole suite on demand.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: "0 5 * * *"
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "valkey-roaring branch, tag or SHA to validate"
+        default: main
+      full:
+        description: "Include the large datasets (FULL=1)"
+        type: boolean
+        default: false
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    # Suite 09 pulls the ~2 GB upstream redis-roaring image; the module image
+    # is built from source. The default 360-minute limit is far more headroom
+    # than a hung server should ever get.
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Run every suite
+        env:
+          VR_REF: ${{ inputs.ref || 'main' }}
+          FULL: ${{ inputs.full && '1' || '' }}
+        run: bash run_all.sh
+
+      - name: Server logs on failure
+        if: failure()
+        run: docker compose logs --tail 200

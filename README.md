@@ -32,10 +32,15 @@ the fixes for real bugs the module's own tests had missed, among them:
 ## Quick start
 
 ```bash
-git clone https://github.com/fjmaco/-valkey-roaring-testing.git
-cd -valkey-roaring-testing
+git clone https://github.com/fjmaco/-valkey-roaring-testing.git valkey-roaring-testing
+cd valkey-roaring-testing
 bash run_all.sh
 ```
+
+Clone into an explicit directory name as above: the repository name begins
+with a dash, and a directory named `-valkey-roaring-testing` cannot be
+`cd`'d into without a path prefix (`cd ./-valkey-roaring-testing`) because
+the shell reads the name as options.
 
 That is the whole setup. The runner fetches the module source, builds the
 image, starts the server, creates the Python virtualenv, downloads the

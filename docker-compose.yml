@@ -2,9 +2,9 @@
 # this repository holds no module code — which `run_all.sh` resolves and
 # exports as VR_SOURCE. See "Where the module comes from" in README.md.
 #
-# The project name is pinned because the repository directory is named
-# `-valkey-roaring-testing`; compose derives the project name from the
-# directory and rejects one that starts with a dash.
+# The project name is pinned because a plain `git clone` of this repository
+# produces a directory named `-valkey-roaring-testing`; compose derives the
+# project name from the directory and rejects one that starts with a dash.
 name: valkey-roaring-testing
 
 services:
