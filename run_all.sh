@@ -4,7 +4,7 @@
 # prepares the Python environment, then executes every suite in order.
 # Any suite failure fails the run.
 #
-# Usage:  bash run_all.sh              # standard run (~3 minutes + downloads)
+# Usage:  bash run_all.sh              # standard run (~10 minutes; suite 09 dominates)
 #         FULL=1 bash run_all.sh       # adds the large datasets to suite 01
 #         bash run_all.sh 03 09        # run only the given suite numbers
 #

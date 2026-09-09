@@ -46,10 +46,15 @@ That is the whole setup. The runner fetches the module source, builds the
 image, starts the server, creates the Python virtualenv, downloads the
 corpora, and runs all twelve suites.
 
+Budget about ten minutes for a full run, most of it suite 09: it replays
+thousands of commands against the upstream module and pulls that ~2 GB
+image the first time. The other eleven suites together take well under two
+minutes.
+
 Requirements: `docker` with Compose v2, `python3` with `venv`, and `git`.
 
 ```bash
-bash run_all.sh              # everything (~3 minutes plus first-run downloads)
+bash run_all.sh              # everything (~10 minutes; longer on a first run)
 FULL=1 bash run_all.sh       # adds the large datasets to suite 01
 bash run_all.sh 02 09        # only suites 02 and 09
 VR_KEEP=1 bash run_all.sh    # leave the server up after a passing run
