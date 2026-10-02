@@ -44,7 +44,7 @@ the shell reads the name as options.
 
 That is the whole setup. The runner fetches the module source, builds the
 image, starts the server, creates the Python virtualenv, downloads the
-corpora, and runs every suite (twenty-three; three of them only when asked,
+corpora, and runs every suite (twenty-four; three of them only when asked,
 see below).
 
 Budget about ten minutes for a full run, most of it suite 09: it replays
@@ -178,6 +178,7 @@ Downloads happen once into `datasets/` (~5 MB standard, ~50 MB with
 | 21 | `upgrade_from_1_1_1` | **`VT_COMPAT=1` only** — keys of every shape written by the 1.1.1 image survive DUMP/RESTORE, its dump.rdb at startup, its AOF replay and replication from a 1.1.1 primary; writes only 1.1.1 accepts (lenient IMPORT blobs, "+5"/"007"/"01", lowercase BITOP), hand-picked and as a random 2,500-command stream of plain commands, MULTI/EXEC blocks and EVAL effects, must replay and replicate to exactly 1.1.1's sets with no CRITICAL log lines (regression guard) | upgrade-path data loss from tightened decoding |
 | 22 | `small_write_costs` | per-call server time of single-bit writes, short ranges, point reads and small GETBITS on a one-million-container R64 key and a 65,536-container R key vs a one-container key; the ratio must stay small (regression guard: R64.SETRANGE once walked the whole key) | hidden whole-key passes on hot paths that small-key benchmarks never show |
 | 23 | `operation_routes` | commands that pick an algorithm by input shape give the same answer on every route: BITOP NOT's direct complement vs XOR (R and per-R64-sub-bitmap, full blocks, `last` at chunk edges and near the top), AND/DIFF copy-then-filter vs fresh build (R64 deciding from its first sixteen sub-bitmaps, steered both ways), two-source ANDOR/DIFF1, destination aliasing, R64 CONTAINS past sixteen sub-bitmaps with mixed encodings; model, canonical EXPORT and upstream reply bytes; overwrite/UNLINK loops around the 1,024-container in-place free threshold keep PING fast (`VT_LOAD=1`: every shape pair at full size, ~20 min) | a fast path wrong only for the shapes that select it; frees that stall the server |
+| 24 | `limits_and_encoding` | the two limit configs (`valkey-roaring.max-reply-elements`, `valkey-roaring.max-write-values`): defaults with byte-identical refusals under RESP2/RESP3, every reply and write command at a changed limit's exact boundary on both widths with the value named in the refusal, out-of-range values refused by CONFIG SET and failing a server start, values given at startup; the maxmemory check: range writes that would cross maxmemory refused with the server's OOM reply before allocating or creating anything, smaller ones accepted, MULTI/EXEC and Lua, eviction policies (only writes larger than maxmemory refused, the server evicts for the rest); a replica and an AOF replay with a lower write limit and a tiny maxmemory apply every write the primary accepted; `EXPORT/IMPORT ... BASE64`: the raw blob's standard Base64 on real datasets, CRoaring blobs via Python's base64, canonical texts, strict decoding (padding, stray characters, URL-safe alphabet, unused bits), exact tokens, arity, GETKEYS, valkey-cli paste, no-op signals | limits that drift from their documented defaults or ignore their setting; memory refusals that leave partial state or fire on replicas and replay; a text encoding that is not the exact inverse of the binary one |
 
 Every suite is a self-contained script with a module docstring stating its
 contract and targeted escape class — those docstrings are the per-suite
@@ -188,8 +189,9 @@ server:
 .venv/bin/python suites/test_06_boundaries.py
 ```
 
-Suites 03, 04, 10, 19 and 21 start and remove their own helper containers
-(`vt-aof`, `vt-replica`, `vt-cluster`, `vt-capped`, `vt-old`/`vt-new`);
+Suites 03, 04, 10, 19, 21 and 24 start and remove their own helper
+containers (`vt-aof`, `vt-replica`, `vt-cluster`, `vt-capped`,
+`vt-old`/`vt-new`, `vt-lim-*`);
 suites 09 and 20 pull and run `aviggiano/redis-roaring:latest` as
 `vt-upstream` and `vt-upstream20`.
 
