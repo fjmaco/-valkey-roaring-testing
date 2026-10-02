@@ -97,6 +97,40 @@ def main():
     s.check("A and C byte-identical", True, blobs["a"] == blobs["c"])
     s.check("blob decodes to the exact target", target, list(BitMap.deserialize(blobs["a"])))
 
+    # Containers whose run and array encodings are the same size (cardinality
+    # = 2 * runs + 1, e.g. {5,6,7}): range writes build runs, array writes
+    # build arrays, and optimizing alone keeps whichever is there.
+    for prefix in ("R", "R64"):
+        c.cmd("DEL", "t:run", "t:arr", "t:bit")
+        c.cmd(f"{prefix}.SETRANGE", "t:run", 5, 8)
+        c.cmd(f"{prefix}.SETRANGE", "t:run", 70_000, 70_003)
+        c.cmd(f"{prefix}.SETBIT", "t:run", 70_005, 1)
+        c.cmd(f"{prefix}.SETINTARRAY", "t:arr", 5, 6, 7, 70_000, 70_001, 70_002, 70_005)
+        for v in (70_005, 70_002, 7, 70_001, 6, 70_000, 5):
+            c.cmd(f"{prefix}.SETBIT", "t:bit", v, 1)
+        tie = {h: c.cmd(f"{prefix}.EXPORT", f"t:{h}") for h in ("run", "arr", "bit")}
+        s.check(f"{prefix} tie: range- and array-built byte-identical", True,
+                tie["run"] == tie["arr"])
+        s.check(f"{prefix} tie: bit-by-bit build byte-identical", True,
+                tie["bit"] == tie["arr"])
+
+    # The same through an incremental flip stream on an exported key: after
+    # every flip, the blob must equal that of the same set rebuilt in bulk.
+    base = sorted({start + i for start in rng.sample(range(2_000_000), 40)
+                   for i in range(rng.randrange(2, 12))})
+    load(c, "flip", base)
+    c.cmd("R.EXPORT", "flip")                 # leaves run containers behind
+    drifted = 0
+    for i, v in enumerate(base[:300]):
+        c.cmd("R.SETBIT", "flip", v, i % 2)
+        blob = c.cmd("R.EXPORT", "flip")
+        c.cmd("DEL", "flip:fresh")
+        members = c.cmd("R.GETINTARRAY", "flip")
+        if members:
+            c.cmd("R.SETINTARRAY", "flip:fresh", *members)
+            drifted += blob != c.cmd("R.EXPORT", "flip:fresh")
+    s.check("flip stream: every blob equals the bulk-built blob", 0, drifted)
+
     # ------------------------------------------------------------------
     s.section("4. consumer decode fidelity (real CRoaring)")
     for card in (1, 100, 10_000, 70_000, 250_000, 750_000):

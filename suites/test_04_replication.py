@@ -3,11 +3,14 @@
 Attaches a real replica, then streams thousands of mixed write commands at
 the primary while the replica is syncing. At the end, waits for offset
 convergence and requires byte-identical EXPORT blobs for every key on both
-sides, plus replica-side read correctness.
+sides, plus replica-side read correctness. Then replays writes that change
+nothing and requires that they add nothing to the replication stream while
+both sides still export identical blobs.
 
 Escape class targeted: verbatim-propagation gaps (a real bug class in this
 module's history: writes silently not replicating), ordering effects, and
-commands whose replication payload differs from their effect.
+commands whose replication payload differs from their effect, and the
+reverse: a write skipped as a no-op that did change the primary.
 """
 
 import sys
@@ -80,6 +83,47 @@ def main():
             mismatches += 1
             print(f"  MISMATCH: {k}")
     s.check("EXPORT blobs identical on replica", 0, mismatches)
+
+    s.section("no-op writes are not propagated")
+
+    def offset():
+        info = c.cmd("INFO", "replication").decode()
+        return int(info.split("master_repl_offset:")[1].split()[0])
+
+    # Every command below re-applies state the load above already produced,
+    # including SETRANGE over the OPTIMIZEd (run-encoded) rr:* ranges and an
+    # IMPORT of a key's own blob.
+    noops = []
+    for i, vals in enumerate(data):
+        noops.append(["R.SETBIT", f"r:{i}", 4294967295, 1])
+        noops.append(["R.CLEARBITS", f"r:{i}", *vals[:50]])
+        noops.append(["R64.SETBIT", f"r64:{i}", (1 << 63) + i, 1])
+        noops.append(["R.SETRANGE", f"rr:{i}", i * 100000, i * 100000 + 70000])
+        noops.append(["EVAL", "return redis.call('R.IMPORT', KEYS[1], redis.call('R.EXPORT', KEYS[1]))",
+                      1, f"r:{i}"])
+    before = offset()
+    for j in range(0, len(noops), 50):
+        c.pipeline(noops[j:j + 50])
+    grew = offset() - before
+    # Each propagated command would add 40+ bytes; allow only for the
+    # primary's periodic PING to its replica.
+    s.check_true("no-op writes add nothing to the replication stream",
+                 grew < 100, f"offset grew {grew} bytes over {len(noops)} no-ops")
+    mismatches = 0
+    for k in keys:
+        prefix = "R64" if k.startswith("r64:") else "R"
+        if c.cmd(f"{prefix}.EXPORT", k) != replica.cmd(f"{prefix}.EXPORT", k):
+            mismatches += 1
+            print(f"  MISMATCH after no-ops: {k}")
+    s.check("EXPORT blobs still identical after no-ops", 0, mismatches)
+    before = offset()
+    c.cmd("R.SETBIT", "noop:real", 7, 1)
+    s.check_true("a real write is propagated", offset() > before)
+    for _ in range(20):
+        if replica.cmd("R.GETBIT", "noop:real", 7) == 1:
+            break
+        time.sleep(0.25)
+    s.check("replica applies the real write", 1, replica.cmd("R.GETBIT", "noop:real", 7))
 
     s.section("replica-side reads")
     s.check("replica GETBIT", 1, replica.cmd("R.GETBIT", "r:3", 4294967295))

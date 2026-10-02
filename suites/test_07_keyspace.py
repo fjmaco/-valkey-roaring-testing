@@ -2,14 +2,17 @@
 
 Module types must interoperate with Valkey's generic key commands. This
 suite exercises TYPE, EXISTS, DEL/UNLINK, RENAME, COPY, EXPIRE/PERSIST/TTL,
-SCAN with TYPE filter, RANDOMKEY, MEMORY USAGE, OBJECT ENCODING, and
-keyspace notifications for module writes.
+SCAN with TYPE filter, RANDOMKEY, MEMORY USAGE, OBJECT ENCODING,
+keyspace notifications for module writes, and the key-modified signal that
+WATCH and client-side caching depend on: reads and writes that change
+nothing must not fire it, real changes must.
 
 Escape class targeted: integration seams between the module's type
 registration (free/copy/mem_usage callbacks) and server machinery the
 repo suite never touches.
 """
 
+import random
 import sys
 import time
 
@@ -64,6 +67,34 @@ def main():
     s.check_true("memory usage positive", small > 0, small)
     s.check_true("bigger key reports more", big > small, f"{big} vs {small}")
 
+    # MEMORY USAGE estimates the value's heap footprint, so it should track
+    # what the allocator reports for one freshly built key (sparse ids:
+    # ~250 array containers). used_memory_dataset leaves out replication
+    # backlog and AOF buffers, which the 1.8 MB command itself can grow once
+    # an earlier suite attached a replica; the build runs on a separate
+    # connection, closed before measuring, so its query buffer is not counted.
+    lazy = c.cmd("CONFIG", "GET", "lazyfree-lazy-user-del")[1]
+    c.cmd("CONFIG", "SET", "lazyfree-lazy-user-del", "no")
+    rng = random.Random(0x7E57)
+    vals = rng.sample(range(1 << 24), 200_000)
+
+    def used_memory():
+        info = c.cmd("INFO", "memory").decode()
+        return int(info.split("used_memory_dataset:")[1].split()[0])
+
+    for prefix in ("R", "R64"):
+        before = used_memory()
+        b = Client()
+        b.cmd(f"{prefix}.SETINTARRAY", "acc", *vals)
+        b.close()
+        time.sleep(0.2)
+        grown = used_memory() - before
+        mem = c.cmd("MEMORY", "USAGE", "acc", "SAMPLES", "0")
+        s.check_true(f"{prefix} MEMORY USAGE within 25% of allocated bytes",
+                     0.75 <= mem / grown <= 1.25, f"usage={mem} allocated={grown}")
+        c.cmd("DEL", "acc")
+    c.cmd("CONFIG", "SET", "lazyfree-lazy-user-del", lazy)
+
     s.section("keyspace notifications")
     # Documented contract: module WRITE commands emit no keyspace events
     # (matching redis-roaring, which also never calls NotifyKeyspaceEvent).
@@ -90,6 +121,62 @@ def main():
                  and not any(b"setbit" in e.lower() for e in events),
                  f"events={events}")
     c.cmd("CONFIG", "SET", "notify-keyspace-events", "")
+
+    s.section("WATCH and client-side caching see real changes only")
+    c.cmd("R.SETINTARRAY", "trk:a", 1, 2, 3)
+    inv = Client()
+    inv_id = inv.cmd("CLIENT", "ID")
+    inv.cmd("SUBSCRIBE", "__redis__:invalidate")
+    tracker = Client()
+    tracker.cmd("CLIENT", "TRACKING", "on", "REDIRECT", inv_id, "BCAST", "PREFIX", "trk:")
+
+    def invalidated(wait):
+        keys = []
+        deadline = time.time() + wait
+        while time.time() < deadline:
+            try:
+                inv.sock.settimeout(max(0.05, deadline - time.time()))
+                msg = inv._read_reply()
+            except OSError:
+                break
+            if msg and msg[0] == b"message" and msg[1] == b"__redis__:invalidate":
+                keys.extend(msg[2] or [])
+        return keys
+
+    # Each of these leaves trk:a = {1, 2, 3} exactly as it was.
+    unchanged = [
+        ["R.EXPORT", "trk:a"],
+        ["R.GETINTARRAY", "trk:a"],
+        ["R.SETBIT", "trk:a", 1, 1],
+        ["R.SETBIT", "trk:a", 9, 0],
+        ["R.APPENDINTARRAY", "trk:a", 2, 3],
+        ["R.DELETEINTARRAY", "trk:a", 99],
+        ["R.CLEARBITS", "trk:a", 99],
+        ["R.SETRANGE", "trk:a", 1, 4],
+        ["EVAL", "return redis.call('R.IMPORT', KEYS[1], redis.call('R.EXPORT', KEYS[1]))",
+         1, "trk:a"],
+    ]
+    replies = c.pipeline(unchanged)
+    s.check_true("no-op commands succeed",
+                 not any(isinstance(r, ReplyError) for r in replies), f"replies={replies}")
+    s.check("reads and no-op writes send no invalidation", [], invalidated(0.5))
+    c.cmd("R.SETBIT", "trk:a", 50, 1)
+    s.check("a real write invalidates the key", [b"trk:a"], invalidated(1))
+
+    w = Client()
+    w.cmd("WATCH", "trk:a")
+    c.pipeline(unchanged)
+    w.cmd("MULTI")
+    w.cmd("R.BITCOUNT", "trk:a")
+    s.check("WATCH survives reads and no-op writes", [4], w.cmd("EXEC"))
+    w.cmd("WATCH", "trk:a")
+    c.cmd("R.SETBIT", "trk:a", 51, 1)
+    w.cmd("MULTI")
+    w.cmd("R.BITCOUNT", "trk:a")
+    s.check("WATCH aborts after a real write", None, w.cmd("EXEC"))
+    tracker.cmd("CLIENT", "TRACKING", "off")
+    for conn in (inv, tracker, w):
+        conn.close()
 
     c.cmd("FLUSHALL")
     s.finish()

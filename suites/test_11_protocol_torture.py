@@ -28,14 +28,14 @@ COMMANDS = [
     "R64.SETBIT", "R64.GETBIT", "R64.GETBITS", "R64.CLEARBITS", "R64.CLEAR",
     "R64.SETINTARRAY", "R64.GETINTARRAY", "R64.APPENDINTARRAY",
     "R64.DELETEINTARRAY", "R64.RANGEINTARRAY", "R64.SETBITARRAY",
-    "R64.GETBITARRAY", "R64.SETRANGE", "R64.BITCOUNT", "R64.BITPOS",
+    "R64.GETBITARRAY", "R64.SETRANGE", "R64.SETFULL", "R64.BITCOUNT", "R64.BITPOS",
     "R64.MIN", "R64.MAX", "R64.OPTIMIZE", "R64.CONTAINS", "R64.JACCARD",
     "R64.DIFF", "R64.BITOP", "R64.EXPORT", "R64.IMPORT", "R.STAT",
 ]
-# R.SETFULL / R64.SETFULL excluded from arg soup only where they could
-# genuinely fill memory: R.SETFULL on a fresh key allocates the full u32
-# run container (cheap); R64.SETFULL is documented as impractical and
-# excluded here on purpose.
+# R.SETFULL is left out of the arg soup: every fresh key it hits would
+# store 2^32 values (about 3 MB each), and R.GETINTARRAY of such a key is
+# refused anyway. R64.SETFULL is refused outright (range too large), so it
+# is in.
 COMMANDS.remove("R.SETFULL")
 
 

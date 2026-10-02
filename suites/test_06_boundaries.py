@@ -60,7 +60,8 @@ def main():
             c.cmd("R.GETBITS", "topnot", *range(U32 - 5, U32 + 1)))
     s.check("NOT includes below", 1, c.cmd("R.GETBIT", "topnot", U32 - 6))
     err = c.cmd_err("R.SETBIT", "top", 1 << 32, 1)
-    s.check_true("u32 overflow rejected", "out of range" in err, err)
+    s.check("u32 overflow rejected, upstream's wording",
+            "ERR invalid offset: must be an unsigned 32 bit integer", err)
 
     s.section("u64 giants: 2^32, 2^63, u64::MAX")
     giants = [(1 << 32) - 1, 1 << 32, (1 << 32) + 1, (1 << 63) - 1, 1 << 63, U64 - 1, U64]
@@ -74,7 +75,8 @@ def main():
     c.cmd("R64.CLEARBITS", "g", U64)
     s.check("clear u64::MAX", 0, c.cmd("R64.GETBIT", "g", U64))
     err = c.cmd_err("R64.SETBIT", "g", "18446744073709551616", 1)  # 2^64
-    s.check_true("u64 overflow rejected", "invalid" in err or "out of range" in err, err)
+    s.check("u64 overflow rejected, upstream's wording",
+            "ERR invalid offset: must be an unsigned 64 bit integer", err)
 
     s.section("bit-array codec round trip at borders")
     bits = "1" + "0" * 65534 + "11"  # length 65537, crosses a chunk border
