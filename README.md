@@ -44,7 +44,7 @@ the shell reads the name as options.
 
 That is the whole setup. The runner fetches the module source, builds the
 image, starts the server, creates the Python virtualenv, downloads the
-corpora, and runs every suite (twenty-two; three of them only when asked,
+corpora, and runs every suite (twenty-three; three of them only when asked,
 see below).
 
 Budget about ten minutes for a full run, most of it suite 09: it replays
@@ -66,8 +66,8 @@ VT_PARITY_SEEDS=10 bash run_all.sh 20   # a longer independent parity fuzz
 ```
 
 Suites 18, 19 and 21 are heavy or need an extra image and skip themselves
-unless their flag is set, so a default run stays around ten minutes (suite
-20 adds about a minute). Suite 18 also reads
+unless their flag is set, so a default run stays around ten minutes (suites
+20 and 23 add about a minute each). Suite 18 also reads
 `VT_LOAD_CLIENTS` (default 32), `VT_LOAD_PIPELINE` (8), `VT_SOAK_SECONDS`
 (60) and `VT_PORT` (6379; point it at another server to compare builds).
 
@@ -177,6 +177,7 @@ Downloads happen once into `datasets/` (~5 MB standard, ~50 MB with
 | 20 | `parity_fuzz` | an independent raw-byte differential against redis-roaring: random commands with malformed numbers, bits, case/NUL-truncated tokens, wrong-type and missing keys in every slot (RESP2/RESP3, both widths); an exhaustive check-order matrix (reply and resulting state); CONTAINS's echoed token at its edges; JACCARD at %.17g ties; R.STAT after short write histories: every field but the per-encoding container breakdown must match at each step (the breakdown is a documented divergence), and the whole STAT after R.OPTIMIZE; regression guard for trailing CR/LF in the CONTAINS echo | reply drift the curated rows of suite 09 do not cover |
 | 21 | `upgrade_from_1_1_1` | **`VT_COMPAT=1` only** — keys of every shape written by the 1.1.1 image survive DUMP/RESTORE, its dump.rdb at startup, its AOF replay and replication from a 1.1.1 primary; writes only 1.1.1 accepts (lenient IMPORT blobs, "+5"/"007"/"01", lowercase BITOP), hand-picked and as a random 2,500-command stream of plain commands, MULTI/EXEC blocks and EVAL effects, must replay and replicate to exactly 1.1.1's sets with no CRITICAL log lines (regression guard) | upgrade-path data loss from tightened decoding |
 | 22 | `small_write_costs` | per-call server time of single-bit writes, short ranges, point reads and small GETBITS on a one-million-container R64 key and a 65,536-container R key vs a one-container key; the ratio must stay small (regression guard: R64.SETRANGE once walked the whole key) | hidden whole-key passes on hot paths that small-key benchmarks never show |
+| 23 | `operation_routes` | commands that pick an algorithm by input shape give the same answer on every route: BITOP NOT's direct complement vs XOR (R and per-R64-sub-bitmap, full blocks, `last` at chunk edges and near the top), AND/DIFF copy-then-filter vs fresh build (R64 deciding from its first sixteen sub-bitmaps, steered both ways), two-source ANDOR/DIFF1, destination aliasing, R64 CONTAINS past sixteen sub-bitmaps with mixed encodings; model, canonical EXPORT and upstream reply bytes; overwrite/UNLINK loops around the 1,024-container in-place free threshold keep PING fast (`VT_LOAD=1`: every shape pair at full size, ~20 min) | a fast path wrong only for the shapes that select it; frees that stall the server |
 
 Every suite is a self-contained script with a module docstring stating its
 contract and targeted escape class — those docstrings are the per-suite
